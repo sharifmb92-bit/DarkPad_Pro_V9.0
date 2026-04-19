@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Dark Pad Pro</title>
+    
+    <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIkRhcmsgUGFkIFBybyIsCiAgInNob3J0X25hbWUiOiAiRGFya1BhZCIsCiAgInN0YXJ0X3VybCI6ICIuIiwKICAiZGlzcGxheSI6ICJzdGFuZGFsb25lIiwKICAiYmFja2dyb3VuZF9jb2xvciI6ICIjMDUwYTBmIiwKICAidGhlbWVfY29sb3IiOiAiIzA1MGEwZiIsCiAgImljb25zIjogWwogICAgewogICAgICAic3JjIjogImh0dHBzOi8vY2RuLWljb25zLXBuZy5mbGF0aWNvbi5jb20vNTEyLzI1ODkvMjU4OTM0Ny5wbmciLAogICAgICAic2l6ZXMiOiAiNTEyeDUxMiIsCiAgICAgICJ0eXBlIjogImltYWdlL3BuZyIKICAgIH0KICBdCn0=">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
+
+    <style>
+        [x-cloak] { display: none !important; }
+        body { background-color: #050a0f; color: #e2e8f0; font-family: system-ui, sans-serif; overflow: hidden; height: 100vh; }
+        .bg-pure-black { background-color: #000000 !important; }
+        
+        /* Escalas */
+        .scale-small { transform: scale(0.9); transform-origin: top center; }
+        .scale-large { transform: scale(1.05); transform-origin: top center; }
+
+        /* Alerta Gigante */
+        .alarm-overlay { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; border: 4px solid #f97316; animation: pulse-border 1s infinite; }
+        @keyframes pulse-border { 0% { border-color: #f97316; } 50% { border-color: #ef4444; } 100% { border-color: #f97316; } }
+
+        .modal-container { width: 92%; max-width: 400px; max-height: 80vh; margin: auto; border-radius: 2.5rem; overflow: hidden; display: flex; flex-direction: column; background: #1c2833; border: 1px solid rgba(255,255,255,0.1); }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body x-data="notesApp()" x-init="init()" :class="[config.pureBlack ? 'bg-pure-black' : '', 'scale-' + config.uiScale]">
+
+    <div x-show="activeAlarm" x-cloak class="alarm-overlay text-center">
+        <span class="material-symbols-outlined text-8xl text-orange-500 animate-bounce mb-4">notifications_active</span>
+        <h2 class="text-3xl font-black uppercase text-white mb-2">¡AVISO DE TURNO!</h2>
+        <p class="text-xl text-sky-400 font-bold mb-8" x-text="activeAlarm?.titulo || 'Revisar registro'"></p>
+        <button @click="stopAlarm()" class="bg-orange-600 text-white px-12 py-5 rounded-3xl font-black text-xl uppercase shadow-2xl active:scale-95">Entendido / Cerrar</button>
+    </div>
+
+    <header class="p-5 pb-2 sticky top-0 z-50 bg-inherit border-b border-white/5">
+        <div class="flex justify-between items-center mb-4">
+            <div>
+                <h1 class="text-xl font-black text-orange-500 italic uppercase tracking-tighter">Dark Pad</h1>
+                <p class="text-[8px] font-black text-sky-500 uppercase tracking-widest">Installable Pro V9</p>
+            </div>
+            <button @click="ui.showSettings = true" class="p-2 bg-white/5 rounded-full"><span class="material-symbols-outlined text-sky-400">settings</span></button>
+        </div>
+        
+        <div class="flex items-center justify-between bg-white/5 p-2 rounded-2xl border border-white/10">
+            <div class="flex items-center gap-1">
+                <button @click="ui.showSearch = !ui.showSearch" class="p-2"><span class="material-symbols-outlined text-sky-400 text-sm">search</span></button>
+                <input x-show="ui.showSearch" x-model="search" type="text" placeholder="Buscar..." class="w-20 bg-transparent outline-none text-xs text-white">
+            </div>
+            <div class="flex gap-2 pr-1">
+                <button @click="cambiarTamanoTexto()" class="p-1"><span class="material-symbols-outlined text-white/50 text-sm">format_size</span></button>
+                <button @click="ui.showFullCalendar = true" class="p-1"><span class="material-symbols-outlined text-sky-400 text-sm">calendar_month</span></button>
+                <button @click="resetFiltros()" class="p-1"><span class="material-symbols-outlined text-white/50 text-sm">restart_alt</span></button>
+            </div>
+        </div>
+    </header>
+
+    <section class="px-4 py-3 bg-white/5 overflow-x-auto whitespace-nowrap hide-scrollbar flex gap-2 border-b border-white/5">
+        <template x-for="day in recentDays" :key="day.dateStr">
+            <div @click="filterByDate(day.dateStr)" 
+                 class="flex flex-col items-center min-w-[50px] p-2.5 rounded-2xl transition-all"
+                 :class="selectedDate === day.dateStr ? 'bg-sky-500 text-white shadow-lg' : 'bg-white/5'">
+                <span class="text-[7px] uppercase font-black opacity-50" x-text="day.weekday"></span>
+                <span class="text-sm font-black" x-text="day.dayNum"></span>
+                <div x-show="day.hasNote" class="w-1 h-1 bg-orange-500 rounded-full mt-1"></div>
+            </div>
+        </template>
+    </section>
+
+    <main class="p-4 grid grid-cols-2 gap-4 h-[calc(100vh-230px)] overflow-y-auto pb-32 hide-scrollbar">
+        <template x-for="nota in notasFiltradas" :key="nota.id">
+            <div @click="abrirNota(nota)" class="p-5 h-44 rounded-[2rem] flex flex-col justify-between border border-white/5" :class="[nota.estilo, nota.pinned ? 'border-orange-500 border-2' : '']">
+                <div>
+                    <h4 class="text-[9px] font-black uppercase opacity-50 truncate mb-1" x-text="nota.titulo || 'Sin título'"></h4>
+                    <p class="font-bold text-white leading-tight line-clamp-3" :style="{ fontSize: (config.fontSize-2)+'px' }" x-text="nota.type === 'checklist' ? '✓ Tareas' : nota.texto"></p>
+                </div>
+                <div class="flex justify-between items-center opacity-30 text-[8px] font-black">
+                    <span x-text="nota.fecha"></span>
+                    <span x-show="nota.reminderAt" class="material-symbols-outlined text-[12px] text-orange-400">notifications_active</span>
+                </div>
+            </div>
+        </template>
+    </main>
+
+    <div class="fixed bottom-8 right-6 z-[100] flex flex-col items-end gap-3">
+        <div x-show="ui.showFabMenu" x-transition x-cloak class="flex flex-col gap-2">
+            <button @click="nuevaNota('checklist')" class="bg-sky-600 text-white px-5 py-3 rounded-2xl font-black text-[9px] uppercase shadow-2xl flex items-center gap-2">Checklist <span class="material-symbols-outlined text-sm">rule</span></button>
+            <button @click="nuevaNota('note')" class="bg-orange-600 text-white px-5 py-3 rounded-2xl font-black text-[9px] uppercase shadow-2xl flex items-center gap-2">Nota <span class="material-symbols-outlined text-sm">edit_note</span></button>
+        </div>
+        <button @click="ui.showFabMenu = !ui.showFabMenu" class="w-16 h-16 bg-white text-black rounded-3xl flex items-center justify-center shadow-2xl" :class="ui.showFabMenu ? 'rotate-45 bg-red-500 text-white' : ''">
+            <span class="material-symbols-outlined text-4xl font-black">add</span>
+        </button>
+    </div>
+
+    <div x-show="notaExpandida" x-transition x-cloak class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-4 backdrop-blur-md">
+        <div class="modal-container" :class="notaExpandida?.estilo">
+            <div class="p-4 flex justify-between items-center bg-black/20">
+                <span class="text-[10px] font-black uppercase opacity-50" x-text="notaExpandida?.fecha"></span>
+                <button @click="cerrarNota()" class="w-8 h-8 bg-black/30 rounded-full flex items-center justify-center"><span class="material-symbols-outlined text-sm">close</span></button>
+            </div>
+            
+            <div class="px-5 pt-4"><input x-model="notaExpandida.titulo" placeholder="Título del turno/nota..." class="w-full bg-white/5 p-3 rounded-2xl text-white font-bold border border-white/10 outline-none"></div>
+            
+            <div class="flex-grow overflow-y-auto p-5">
+                <template x-if="notaExpandida?.type === 'note'">
+                    <textarea x-model="notaExpandida.texto" class="w-full h-full bg-transparent outline-none text-white resize-none" :style="{ fontSize: config.fontSize+'px' }"></textarea>
+                </template>
+                <template x-if="notaExpandida?.type === 'checklist'">
+                    <div class="space-y-2">
+                        <template x-for="(item, index) in notaExpandida.items">
+                            <div class="bg-white/5 p-3 rounded-2xl flex items-center gap-3 border border-white/5">
+                                <button @click="item.done = !item.done"><span class="material-symbols-outlined text-sky-400" x-text="item.done ? 'check_circle' : 'circle'"></span></button>
+                                <input x-model="item.text" class="bg-transparent outline-none flex-grow text-sm text-white">
+                                <button @click="notaExpandida.items.splice(index, 1)"><span class="material-symbols-outlined text-red-500 text-sm">delete</span></button>
+                            </div>
+                        </template>
+                        <button @click="notaExpandida.items.push({text: '', done: false})" class="w-full p-3 border border-dashed border-white/20 rounded-2xl text-[10px] font-black uppercase opacity-40">+ Añadir Tarea</button>
+                    </div>
+                </template>
+            </div>
+
+            <div x-show="ui.showAlarmPanel" class="p-5 bg-black/40 border-t border-white/10">
+                <p class="text-[10px] font-black uppercase text-orange-500 mb-2">Programar Aviso Visual:</p>
+                <input type="datetime-local" x-model="tempAlarm" class="bg-white/10 border border-white/20 p-3 rounded-xl w-full text-white outline-none">
+                <button @click="setAlarm()" class="w-full bg-sky-600 mt-3 p-4 rounded-2xl font-black text-xs uppercase shadow-lg">Confirmar Hora</button>
+            </div>
+
+            <div class="p-6 flex justify-around border-t border-white/5 bg-black/30">
+                <button @click="ui.showAlarmPanel = !ui.showAlarmPanel" :class="notaExpandida?.reminderAt ? 'text-orange-500' : 'text-white/40'"><span class="material-symbols-outlined">notifications_active</span></button>
+                <button @click="togglePin()"><span class="material-symbols-outlined" :class="notaExpandida?.pinned ? 'text-sky-500' : 'text-white/40'">push_pin</span></button>
+                <button @click="borrarNotaRapido()" class="text-red-500/30"><span class="material-symbols-outlined">delete</span></button>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="ui.showSettings" x-transition x-cloak class="fixed inset-0 bg-[#050a0f] z-[500] p-8 overflow-y-auto">
+        <div class="flex justify-between items-center mb-10">
+            <h2 class="text-xl font-black italic uppercase">Panel de Control</h2>
+            <button @click="ui.showSettings = false" class="bg-sky-500 px-6 py-2 rounded-full text-[10px] font-black uppercase">Cerrar</button>
+        </div>
+
+        <div class="space-y-6">
+            <div class="bg-white/5 p-6 rounded-3xl border border-white/10">
+                <p class="text-[10px] font-black uppercase opacity-40 mb-4">Zoom de Interfaz</p>
+                <div class="flex gap-2">
+                    <button @click="config.uiScale = 'small'; guardar()" class="flex-grow p-4 rounded-2xl text-[10px] font-black uppercase" :class="config.uiScale === 'small' ? 'bg-sky-600' : 'bg-white/5'">Pequeño</button>
+                    <button @click="config.uiScale = 'normal'; guardar()" class="flex-grow p-4 rounded-2xl text-[10px] font-black uppercase" :class="config.uiScale === 'normal' ? 'bg-sky-600' : 'bg-white/5'">Normal</button>
+                    <button @click="config.uiScale = 'large'; guardar()" class="flex-grow p-4 rounded-2xl text-[10px] font-black uppercase" :class="config.uiScale === 'large' ? 'bg-sky-600' : 'bg-white/5'">Grande</button>
+                </div>
+            </div>
+
+            <div class="bg-white/5 p-6 rounded-3xl border border-white/10">
+                <p class="text-[10px] font-black uppercase opacity-40 mb-4">Seguridad de Datos</p>
+                <div class="grid grid-cols-2 gap-3">
+                    <button @click="exportData()" class="bg-green-600/20 p-4 rounded-2xl flex flex-col items-center gap-2">
+                        <span class="material-symbols-outlined text-green-400">download</span>
+                        <span class="text-[8px] font-black uppercase">Backup</span>
+                    </button>
+                    <button @click="$refs.fileInput.click()" class="bg-orange-600/20 p-4 rounded-2xl flex flex-col items-center gap-2">
+                        <span class="material-symbols-outlined text-orange-400">upload</span>
+                        <span class="text-[8px] font-black uppercase">Restaurar</span>
+                    </button>
+                    <input type="file" x-ref="fileInput" class="hidden" @change="importData($event)">
+                </div>
+            </div>
+
+            <div class="bg-white/5 p-6 rounded-3xl border border-white/10 flex justify-between items-center">
+                <span class="font-bold text-sm">Modo Negro Puro (AMOLED)</span>
+                <button @click="config.pureBlack = !config.pureBlack; guardar()" class="w-12 h-6 rounded-full p-1 transition-colors" :class="config.pureBlack ? 'bg-sky-500' : 'bg-white/10'">
+                    <div class="w-4 h-4 bg-white rounded-full transition-transform" :class="config.pureBlack ? 'translate-x-6' : ''"></div>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="ui.showFullCalendar" x-transition x-cloak class="fixed inset-0 bg-black/95 z-[300] flex items-center justify-center p-4">
+        <div class="bg-[#1c2833] w-full max-w-xs rounded-[2.5rem] p-6 border border-white/10 shadow-2xl">
+            <div class="flex justify-between items-center mb-6"><h2 class="text-sm font-black uppercase text-sky-400">Historial de Turnos</h2><button @click="ui.showFullCalendar = false" class="bg-white/10 p-2 rounded-full"><span class="material-symbols-outlined">close</span></button></div>
+            <div class="grid grid-cols-7 gap-1 text-center text-[8px] font-black opacity-30 mb-2"><span>Lu</span><span>Ma</span><span>Mi</span><span>Ju</span><span>Vi</span><span>Sa</span><span>Do</span></div>
+            <div class="grid grid-cols-7 gap-2">
+                <template x-for="day in fullMonthDays" :key="day.dateStr">
+                    <button @click="filterByDate(day.dateStr); ui.showFullCalendar = false" class="aspect-square flex flex-col items-center justify-center rounded-xl text-[10px] font-bold" :class="selectedDate === day.dateStr ? 'bg-sky-500 text-white' : 'bg-white/5'">
+                        <span x-text="day.dayNum"></span><div x-show="day.hasNote" class="w-1 h-1 bg-orange-500 rounded-full mt-1"></div>
+                    </button>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function notesApp() {
+            return {
+                notas: [], notaExpandida: null, search: '', selectedDate: null, tempAlarm: '', activeAlarm: null,
+                ui: { showSearch: false, showSettings: false, showAlarmPanel: false, showFullCalendar: false, showFabMenu: false },
+                config: { fontSize: 18, uiScale: 'normal', pureBlack: false },
+                estilos: ['bg-dark-gray', 'bg-dark-orange', 'bg-dark-blue'],
+
+                init() {
+                    this.notas = JSON.parse(localStorage.getItem('darkpad_v9')) || [];
+                    this.config = JSON.parse(localStorage.getItem('darkpad_conf_v9')) || this.config;
+                    
+                    // Chequeo de Alarma Visual cada 5 segundos
+                    setInterval(() => {
+                        const ahora = new Date().getTime();
+                        this.notas.forEach(n => {
+                            if (n.reminderAt && ahora >= new Date(n.reminderAt).getTime()) {
+                                this.activeAlarm = n;
+                                if (window.navigator.vibrate) window.navigator.vibrate([500, 200, 500, 200, 500]);
+                            }
+                        });
+                    }, 5000);
+
+                    // Registrar Service Worker para instalación
+                    if ('serviceWorker' in navigator) {
+                        navigator.serviceWorker.register('sw.js').catch(() => {});
+                    }
+                },
+
+                stopAlarm() {
+                    if (this.activeAlarm) {
+                        const idx = this.notas.findIndex(n => n.id === this.activeAlarm.id);
+                        if(idx !== -1) this.notas[idx].reminderAt = null;
+                        this.activeAlarm = null;
+                        this.guardar();
+                    }
+                },
+
+                nuevaNota(tipo) {
+                    const n = { id: Date.now(), type: tipo, titulo: '', texto: '', items: tipo === 'checklist' ? [{text:'', done:false}] : [], fecha: new Date().toLocaleDateString('es-ES', {day:'2-digit', month:'2-digit'}), estilo: this.estilos[Math.floor(Math.random()*3)], pinned: false, reminderAt: null };
+                    this.notas.unshift(n); this.abrirNota(n); this.ui.showFabMenu = false;
+                },
+
+                abrirNota(n) { this.notaExpandida = n; this.tempAlarm = n.reminderAt || ''; this.ui.showAlarmPanel = false; },
+                cerrarNota() { this.guardar(); this.notaExpandida = null; },
+                guardar() { localStorage.setItem('darkpad_v9', JSON.stringify(this.notas)); localStorage.setItem('darkpad_conf_v9', JSON.stringify(this.config)); },
+                setAlarm() { if(this.tempAlarm) { this.notaExpandida.reminderAt = this.tempAlarm; this.ui.showAlarmPanel = false; this.guardar(); } },
+                filterByDate(date) { this.selectedDate = (this.selectedDate === date) ? null : date; },
+                resetFiltros() { this.selectedDate = null; this.search = ''; },
+                cambiarTamanoTexto() { const t = [14, 18, 22]; this.config.fontSize = t[(t.indexOf(this.config.fontSize) + 1) % t.length]; this.guardar(); },
+                togglePin() { this.notaExpandida.pinned = !this.notaExpandida.pinned; this.guardar(); },
+                borrarNotaRapido() { if(confirm("¿Eliminar nota?")) { this.notas = this.notas.filter(n => n.id !== this.notaExpandida.id); this.cerrarNota(); } },
+                
+                get recentDays() {
+                    const days = [];
+                    for(let i=0; i < 14; i++) {
+                        const d = new Date(); d.setDate(d.getDate() - i);
+                        const dStr = d.toLocaleDateString('es-ES', {day:'2-digit', month:'2-digit'});
+                        days.push({ dateStr: dStr, dayNum: d.getDate(), weekday: d.toLocaleDateString('es-ES', {weekday: 'short'}), hasNote: this.notas.some(n => n.fecha.includes(dStr)) });
+                    }
+                    return days;
+                },
+
+                get fullMonthDays() {
+                    const days = []; const now = new Date();
+                    for(let i=34; i >= 0; i--) {
+                        const d = new Date(); d.setDate(now.getDate() - i);
+                        const dStr = d.toLocaleDateString('es-ES', {day:'2-digit', month:'2-digit'});
+                        days.push({ dateStr: dStr, dayNum: d.getDate(), hasNote: this.notas.some(n => n.fecha.includes(dStr)) });
+                    }
+                    return days;
+                },
+
+                get notasFiltradas() {
+                    return this.notas.filter(n => {
+                        const matchSearch = (n.texto + n.titulo).toLowerCase().includes(this.search.toLowerCase());
+                        const matchDate = !this.selectedDate || n.fecha.includes(this.selectedDate);
+                        return matchSearch && matchDate;
+                    }).sort((a,b) => b.pinned - a.pinned || b.id - a.id);
+                },
+
+                exportData() {
+                    const data = JSON.stringify({ notas: this.notas, config: this.config });
+                    const blob = new Blob([data], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a'); a.href = url; a.download = 'backup_darkpad.json'; a.click();
+                },
+                importData(e) {
+                    const file = e.target.files[0];
+                    const reader = new FileReader();
+                    reader.onload = (f) => {
+                        const parsed = JSON.parse(f.target.result);
+                        this.notas = parsed.notas; this.config = parsed.config;
+                        this.guardar(); location.reload();
+                    };
+                    reader.readAsText(file);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
